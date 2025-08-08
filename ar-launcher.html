@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AR Launcher</title>
+  <meta name="description" content="Lanza tu modelo 3D en AR en iOS y Android con un toque." />
+  <!-- Model Viewer -->
+  <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
+  <style>
+    :root { --bg:#0f172a; --fg:#e2e8f0; --card:#111827; --muted:#94a3b8; --accent:#22c55e; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body { margin: 0; background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; display: grid; place-items: center; }
+    .wrap { width: min(900px, 96vw); }
+    .card { background: var(--card); border-radius: 18px; overflow: hidden; box-shadow: 0 20px 45px rgba(0,0,0,.35); }
+    header { padding: 18px 20px; display: flex; gap: 12px; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,.06); }
+    h1 { margin: 0; font-size: clamp(1.05rem, .9rem + 1vw, 1.4rem); }
+    .muted { color: var(--muted); font-size: .95rem; }
+    model-viewer { width: 100%; height: clamp(360px, 60vh, 640px); background:#0b1220; }
+    footer { display:flex; flex-wrap: wrap; gap: 10px; padding: 14px; border-top: 1px solid rgba(255,255,255,.06); align-items: center; justify-content: space-between; }
+    .btn { display:inline-flex; align-items:center; justify-content:center; gap:10px; font-weight:700; text-decoration:none; padding:14px 18px; border-radius: 14px; border:1px solid transparent; cursor:pointer; }
+    .btn-primary { background: var(--accent); color:#0a0f1a; }
+    .btn-ghost { background: transparent; border-color: rgba(255,255,255,.12); color: var(--fg); }
+    .grid { display:grid; gap: 10px; }
+    .overlay { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(2,6,23,.7); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); }
+    .tapzone { border: 2px dashed rgba(255,255,255,.35); color: #e5e7eb; border-radius: 16px; padding: 24px; text-align: center; max-width: 560px; }
+    .tapzone h2 { margin: 0 0 8px; font-size: 1.2rem; }
+    .code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; background:#0b1220; padding:4px 8px; border-radius:8px; border:1px solid rgba(255,255,255,.08); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <header>
+        <div>
+          <h1 id="title">Visualizador AR</h1>
+          <div class="muted">Cargá tu modelo y tocá “Abrir en AR”.</div>
+        </div>
+        <div class="muted" id="platformHint"></div>
+      </header>
+
+      <model-viewer id="viewer"
+        src=""
+        ios-src=""
+        alt="Modelo 3D"
+        ar
+        ar-modes="webxr scene-viewer quick-look"
+        ar-scale="fixed"
+        camera-controls
+        exposure="1"
+        environment-image="neutral"
+        shadow-intensity="0.6"
+        poster="https://developer.apple.com/augmented-reality/quick-look/models/biplane/ARKit-Quick-Look.png">
+      </model-viewer>
+
+      <footer>
+        <div class="grid">
+          <button class="btn btn-primary" id="arBtn">Abrir en AR</button>
+          <div class="muted" id="tip">Consejo: abrí esto en Safari (iOS) o Chrome (Android).</div>
+        </div>
+        <button class="btn btn-ghost" id="copyLink">Copiar enlace</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Fullscreen tap-anywhere overlay to ensure a user gesture is captured -->
+  <div class="overlay" id="overlay" role="button" aria-label="Tocar para iniciar AR">
+    <div class="tapzone">
+      <h2>Tocá la pantalla para abrir en AR</h2>
+      <div class="muted">Se necesita una interacción para lanzar la experiencia (política del navegador).</div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  const qs = new URLSearchParams(location.search);
+  const glb = qs.get('glb') || '';
+  const usdz = qs.get('usdz') || '';
+  const title = qs.get('title') || 'Visualizador AR';
+  const viewer = document.getElementById('viewer');
+  const arBtn = document.getElementById('arBtn');
+  const copyLink = document.getElementById('copyLink');
+  const titleEl = document.getElementById('title');
+  const tip = document.getElementById('tip');
+  const overlay = document.getElementById('overlay');
+  const platformHint = document.getElementById('platformHint');
+
+  titleEl.textContent = title;
+
+  // Basic device hints
+  const ua = navigator.userAgent.toLowerCase();
+  const isIOS = /iphone|ipad|ipod/.test(ua);
+  const isAndroid = /android/.test(ua);
+  platformHint.textContent = isIOS ? 'iOS / Quick Look' : (isAndroid ? 'Android / Scene Viewer' : 'WebXR');
+
+  // Set sources
+  if (glb) viewer.setAttribute('src', glb);
+  if (usdz) viewer.setAttribute('ios-src', usdz);
+
+  // Single user gesture path to enter AR
+  async function enterAR(){
+    try {
+      // model-viewer handles iOS Quick Look if ios-src is present
+      await viewer.activateAR();
+    } catch (e) {
+      console.warn('AR failed via model-viewer, fallback to direct URL', e);
+      if (isIOS && usdz) {
+        // Direct open for iOS Quick Look (still needs a gesture, this is called from a tap)
+        window.location.href = usdz;
+      } else if (isAndroid && glb) {
+        // Android Scene Viewer intent fallback
+        const intent = `intent://arvr.google.com/scene-viewer/1.0?file=${encodeURIComponent(glb)}&mode=ar_preferred#Intent;scheme=https;package=com.google.android.googlequicksearchbox;action=android.intent.action.VIEW;end;`;
+        window.location.href = intent;
+      } else {
+        alert('No se pudo iniciar AR. Verificá que el URL del modelo es correcto.');
+      }
+    }
+  }
+
+  function captureAndEnter(){
+    overlay.style.display = 'none';
+    enterAR();
+  }
+
+  overlay.addEventListener('click', captureAndEnter, { passive: true });
+  overlay.addEventListener('touchstart', captureAndEnter, { passive: true });
+
+  arBtn.addEventListener('click', enterAR);
+
+  copyLink.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(location.href);
+      copyLink.textContent = '¡Enlace copiado!';
+      setTimeout(() => copyLink.textContent = 'Copiar enlace', 1600);
+    } catch {
+      alert('No se pudo copiar. Copiá manualmente desde la barra de direcciones.');
+    }
+  });
+
+  // If both URLs exist, show a strong tip
+  if (!glb || !usdz) {
+    tip.innerHTML = 'Agregá parámetros <span class="code">?glb=URL_GLTF_O_GLB&usdz=URL_USDZ&title=Nombre</span>';
+  } else {
+    tip.textContent = isIOS
+      ? 'Listo para iOS: tocá la pantalla para abrir en Quick Look.'
+      : 'Listo para Android: tocá la pantalla para abrir en AR.';
+  }
+})();
+</script>
+</body>
+</html>
